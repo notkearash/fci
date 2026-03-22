@@ -9,20 +9,16 @@ from tools.crawler import fetch_source
 from agents.nurture import nurture_content
 from agents.associate import associate_content
 from agents.quality import validate_quality
+from storage.source_store import get_pipeline_cache, save_pipeline_cache
 
 
 def collect_all_urls() -> dict[str, list[str]]:
-    """Collect predefined + dynamically discovered URLs.
-
-    Returns:
-        Dict with 'predefined', 'dynamic', and 'all' URL lists.
-    """
+    """Collect predefined + dynamically discovered URLs."""
     from agents.discovery import create_discovery_agent
     from prompts.discovery import build_task
 
     predefined = list(PREDEFINED_SOURCES)
 
-    # Run discovery agent to find dynamic sources
     dynamic = []
     try:
         import json
@@ -49,23 +45,32 @@ def collect_all_urls() -> dict[str, list[str]]:
     except Exception:
         pass
 
-    all_urls = predefined + dynamic
-    return {"predefined": predefined, "dynamic": dynamic, "all": all_urls}
+    return {"predefined": predefined, "dynamic": dynamic, "all": predefined + dynamic}
 
 
-def run_pipeline_single(url: str, origin: str = "unknown") -> dict[str, Any]:
-    """Run the full pipeline for a single URL."""
-    result: dict[str, Any] = {"url": url, "origin": origin, "stage": "fetch", "error": ""}
+def run_pipeline_single(url: str, origin: str = "unknown", use_cache: bool = True) -> dict[str, Any]:
+    """Run the full pipeline for a single URL. Returns cached result if available."""
+
+    # Check cache first
+    if use_cache:
+        cached = get_pipeline_cache(url)
+        if cached and cached.get("stage") == "done":
+            cached["from_cache"] = True
+            return cached
+
+    result: dict[str, Any] = {"url": url, "origin": origin, "stage": "fetch", "error": "", "from_cache": False}
 
     # Fetch
     try:
         raw = fetch_source.invoke({"url": url})
     except Exception as exc:
         result["error"] = f"Fetch failed: {exc}"
+        save_pipeline_cache(url, result)
         return result
 
     if raw.startswith("[ERROR]"):
         result["error"] = raw
+        save_pipeline_cache(url, result)
         return result
 
     result["stage"] = "nurture"
@@ -76,6 +81,7 @@ def run_pipeline_single(url: str, origin: str = "unknown") -> dict[str, Any]:
         nurtured = nurture_content(url, raw)
     except Exception as exc:
         result["error"] = f"Nurture failed: {exc}"
+        save_pipeline_cache(url, result)
         return result
 
     result["stage"] = "associate"
@@ -87,6 +93,7 @@ def run_pipeline_single(url: str, origin: str = "unknown") -> dict[str, Any]:
         associations = assoc_result.get("associations", [])
     except Exception as exc:
         result["error"] = f"Association failed: {exc}"
+        save_pipeline_cache(url, result)
         return result
 
     result["stage"] = "validate"
@@ -97,6 +104,7 @@ def run_pipeline_single(url: str, origin: str = "unknown") -> dict[str, Any]:
         quality = validate_quality(url, nurtured, associations)
     except Exception as exc:
         result["error"] = f"Validation failed: {exc}"
+        save_pipeline_cache(url, result)
         return result
 
     result["stage"] = "done"
@@ -104,21 +112,23 @@ def run_pipeline_single(url: str, origin: str = "unknown") -> dict[str, Any]:
     result["score"] = quality["score"]
     result["tier"] = quality["tier"]
 
+    # Cache the successful result
+    save_pipeline_cache(url, result)
+
     return result
 
 
 def run_pipeline_all(
     on_progress: callable = None,
     skip_discovery: bool = False,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     """Run the full pipeline: discover sources then process all of them.
 
     Args:
         on_progress: Optional callback(index, total, url, origin, result).
         skip_discovery: If True, only process predefined sources.
-
-    Returns:
-        Dict with 'sources' (predefined/dynamic/all counts), 'results' list, and summary stats.
+        use_cache: If True, skip URLs already cached with a completed result.
     """
     if skip_discovery:
         sources = {"predefined": list(PREDEFINED_SOURCES), "dynamic": [], "all": list(PREDEFINED_SOURCES)}
@@ -130,7 +140,7 @@ def run_pipeline_all(
 
     for i, url in enumerate(sources["all"]):
         origin = "predefined" if url in sources["predefined"] else "dynamic"
-        result = run_pipeline_single(url, origin=origin)
+        result = run_pipeline_single(url, origin=origin, use_cache=use_cache)
         results.append(result)
         if on_progress:
             on_progress(i, total, url, origin, result)
@@ -140,6 +150,7 @@ def run_pipeline_all(
     gold = [r for r in completed if r.get("tier") == "gold"]
     review = [r for r in completed if r.get("tier") == "review"]
     dropped = [r for r in completed if r.get("tier") == "drop"]
+    cached = [r for r in results if r.get("from_cache")]
 
     return {
         "sources": {
@@ -155,5 +166,6 @@ def run_pipeline_all(
             "review": len(review),
             "dropped": len(dropped),
             "errors": len(errors),
+            "from_cache": len(cached),
         },
     }

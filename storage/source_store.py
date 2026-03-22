@@ -16,6 +16,7 @@ SOURCE_CACHE_COLLECTION = "source_content_cache"
 EXTRACTION_COLLECTION = "extracted_results"
 EXTRACTION_ERRORS_COLLECTION = "extraction_errors"
 QUALITY_REVIEWS_COLLECTION = "quality_reviews"
+PIPELINE_CACHE_COLLECTION = "pipeline_cache"
 
 
 def _utcnow() -> datetime:
@@ -500,6 +501,44 @@ def list_quality_reviews(
         return list(collection.find(query, {"_id": 0}).sort("reviewed_at", -1).limit(limit))
     except RuntimeError:
         return []
+
+
+def get_pipeline_cache(url: str) -> dict[str, Any] | None:
+    """Get cached pipeline result for a URL."""
+    if not mongo_configured():
+        return None
+    try:
+        collection = _get_collection(PIPELINE_CACHE_COLLECTION)
+        return collection.find_one({"url": url}, {"_id": 0})
+    except RuntimeError:
+        return None
+
+
+def save_pipeline_cache(url: str, result: dict[str, Any]) -> None:
+    """Cache a pipeline result for a URL."""
+    if not mongo_configured():
+        return
+    try:
+        collection = _get_collection(PIPELINE_CACHE_COLLECTION)
+        collection.update_one(
+            {"url": url},
+            {"$set": {**result, "cached_at": _utcnow()}},
+            upsert=True,
+        )
+    except RuntimeError:
+        pass
+
+
+def clear_pipeline_cache() -> int:
+    """Clear all cached pipeline results. Returns count deleted."""
+    if not mongo_configured():
+        return 0
+    try:
+        collection = _get_collection(PIPELINE_CACHE_COLLECTION)
+        result = collection.delete_many({})
+        return result.deleted_count
+    except RuntimeError:
+        return 0
 
 
 def get_mongo_status() -> tuple[bool, str]:
