@@ -17,6 +17,14 @@ from ui.discovery import (
     run_tavily_only_search,
     save_human_predefined_source,
 )
+from ui.extraction import (
+    fetch_and_cache_entry,
+    get_cached_sources,
+    get_saved_extractions,
+    run_extraction_for_all_cached_sources,
+    run_extraction_from_cache,
+    save_cache_entry,
+)
 
 
 class InitiativeRequest(BaseModel):
@@ -36,6 +44,17 @@ class HumanPredefinedSourceRequest(InitiativeRequest):
     source_type: str
     description: str
     notes: str = ""
+
+
+class SourceCacheRequest(BaseModel):
+    initiative_id: str
+    url: str
+    content: str
+
+
+class ExtractionCacheRequest(BaseModel):
+    initiative_id: str
+    url: str
 
 
 app = FastAPI(
@@ -99,6 +118,11 @@ def sources_discovered(initiative_id: str | None = None, limit: int = 100) -> li
     return get_discovered_sources(initiative_id=initiative_id, limit=limit)
 
 
+@app.get("/sources/cache")
+def sources_cache(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
+    return get_cached_sources(initiative_id=initiative_id, limit=limit)
+
+
 @app.get("/sources/predefined")
 def sources_predefined(initiative_id: str | None = None) -> list[dict]:
     return get_human_predefined_sources(initiative_id=initiative_id)
@@ -120,3 +144,50 @@ def create_predefined_source(request: HumanPredefinedSourceRequest) -> dict:
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/sources/cache")
+def create_source_cache(request: SourceCacheRequest) -> dict:
+    try:
+        return save_cache_entry(
+            initiative_id=request.initiative_id,
+            url=request.url,
+            content=request.content,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/sources/cache/fetch")
+def fetch_source_cache(request: ExtractionCacheRequest) -> dict:
+    try:
+        return fetch_and_cache_entry(
+            initiative_id=request.initiative_id,
+            url=request.url,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/extraction/cache")
+def extraction_from_cache(request: ExtractionCacheRequest) -> dict:
+    try:
+        return run_extraction_from_cache(
+            initiative_id=request.initiative_id,
+            url=request.url,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/extraction/results")
+def extraction_results(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
+    return get_saved_extractions(initiative_id=initiative_id, limit=limit)
+
+
+@app.post("/extraction/cache/all")
+def extraction_from_cache_all(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
+    return run_extraction_for_all_cached_sources(
+        initiative_id=initiative_id,
+        limit=limit,
+    )
