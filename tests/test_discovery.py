@@ -6,9 +6,12 @@ import unittest
 
 from ui.discovery import (
     DEFAULT_SECTION_INITIATIVES,
+    build_tavily_query,
     build_discovery_state,
     run_discovery_batch,
     run_discovery_step,
+    run_tavily_only_batch,
+    run_tavily_only_search,
 )
 
 
@@ -68,6 +71,55 @@ class DiscoveryWorkflowTests(unittest.TestCase):
         self.assertEqual(len(results), 5)
         self.assertEqual(len(seen), 5)
         self.assertEqual(seen, [item["category"] for item in DEFAULT_SECTION_INITIATIVES])
+
+    def test_build_tavily_query_includes_region_terms(self):
+        query = build_tavily_query(
+            category="Housing",
+            name="Rental vacancy rate",
+            metric_label="Rental vacancy rate",
+        )
+
+        self.assertIn("Waterloo Region", query)
+        self.assertIn("Ontario", query)
+        self.assertIn("data source", query)
+
+    def test_run_tavily_only_search_bypasses_predefined_and_returns_candidates(self):
+        def fake_search(query, max_results):
+            self.assertIn("Waterloo Region", query)
+            self.assertEqual(max_results, 5)
+            return [
+                {"title": "A", "url": "https://example.com/a"},
+                {"title": "B", "url": "https://example.com/b"},
+                {"title": "C", "url": "https://example.com/c"},
+                {"title": "D", "url": "https://example.com/d"},
+                {"title": "E", "url": "https://example.com/e"},
+            ]
+
+        result = run_tavily_only_search(
+            initiative_id="housing-4",
+            category="Housing",
+            name="Rental vacancy rate",
+            metric_label="Rental vacancy rate",
+            target_value="3%",
+            search_fn=fake_search,
+        )
+
+        self.assertFalse(result["used_predefined_sources"])
+        self.assertEqual(result["source_count"], 5)
+        self.assertEqual(len(result["sources"]), 5)
+
+    def test_run_tavily_only_batch_runs_all_default_sections(self):
+        seen = []
+
+        def fake_search(query, max_results):
+            seen.append((query, max_results))
+            return [{"title": "A", "url": "https://example.com/a"}] * 5
+
+        results = run_tavily_only_batch(search_fn=fake_search)
+
+        self.assertEqual(len(results), 5)
+        self.assertEqual(len(seen), 5)
+        self.assertTrue(all(item["source_count"] == 5 for item in results))
 
 
 if __name__ == "__main__":

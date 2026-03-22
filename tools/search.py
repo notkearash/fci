@@ -3,12 +3,36 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
 
 def _get_client() -> TavilyClient:
     return TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+
+def search_candidate_sources(query: str, max_results: int = 5) -> list[dict[str, Any]]:
+    """Return structured Tavily search results for source discovery UIs/tests."""
+    client = _get_client()
+    results = client.search(
+        query=query,
+        search_depth="advanced",
+        max_results=max_results,
+        include_answer=True,
+    )
+
+    candidates = []
+    for item in results.get("results", []):
+        candidates.append(
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "content": item.get("content", ""),
+                "score": item.get("score"),
+            }
+        )
+    return candidates
 
 
 @tool
