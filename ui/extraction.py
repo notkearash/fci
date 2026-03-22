@@ -189,9 +189,118 @@ def fetch_and_cache_entry(initiative_id: str, url: str) -> dict:
     )
 
 
+def audit_discovered_source_retrieval(
+    initiative_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    records = list_discovered_sources(initiative_id=initiative_id, limit=limit)
+    results = []
+
+    for record in records:
+        existing_cache = get_cached_source_content(record["initiative_id"], record["url"])
+        source_type = record.get("source_type", "html")
+        try:
+            if existing_cache and str(existing_cache.get("content", "")).strip():
+                content = str(existing_cache["content"])
+                cache_status = "cache_hit"
+            else:
+                content = fetch_source_content_for_cache(
+                    url=record["url"],
+                    source_type=source_type,
+                )
+                save_cache_entry(
+                    initiative_id=record["initiative_id"],
+                    url=record["url"],
+                    content=content,
+                )
+                cache_status = "fetched_and_cached"
+
+            results.append(
+                {
+                    "initiative_id": record["initiative_id"],
+                    "category": record.get("category", ""),
+                    "name": record.get("name", ""),
+                    "url": record["url"],
+                    "source_type": source_type,
+                    "status": "success",
+                    "cache_status": cache_status,
+                    "content_length": len(content),
+                    "preview": content[:300],
+                    "error": "",
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "initiative_id": record["initiative_id"],
+                    "category": record.get("category", ""),
+                    "name": record.get("name", ""),
+                    "url": record["url"],
+                    "source_type": source_type,
+                    "status": "error",
+                    "cache_status": "failed",
+                    "content_length": 0,
+                    "preview": "",
+                    "error": str(exc),
+                }
+            )
+
+    return results
+
+
 def get_cached_sources(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
     return list_source_cache(initiative_id=initiative_id, limit=limit)
 
 
 def get_saved_extractions(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
     return list_extraction_results(initiative_id=initiative_id, limit=limit)
+
+
+def run_extraction_for_all_cached_sources(
+    initiative_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    cached_records = list_source_cache(initiative_id=initiative_id, limit=limit)
+    results = []
+
+    for record in cached_records:
+        url = record.get("url", "")
+        current_initiative_id = record.get("initiative_id", "")
+        try:
+            result = run_extraction_from_cache(
+                initiative_id=current_initiative_id,
+                url=url,
+            )
+            results.append(
+                {
+                    "initiative_id": current_initiative_id,
+                    "category": record.get("category", ""),
+                    "name": record.get("name", ""),
+                    "url": url,
+                    "source_type": record.get("source_type", "html"),
+                    "status": "success",
+                    "raw_value": result["extracted"].get("raw_value", ""),
+                    "numeric_value": result["extracted"].get("numeric_value"),
+                    "unit": result["extracted"].get("unit", ""),
+                    "context": result["extracted"].get("context", ""),
+                    "error": "",
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "initiative_id": current_initiative_id,
+                    "category": record.get("category", ""),
+                    "name": record.get("name", ""),
+                    "url": url,
+                    "source_type": record.get("source_type", "html"),
+                    "status": "error",
+                    "raw_value": "",
+                    "numeric_value": None,
+                    "unit": "",
+                    "context": "",
+                    "error": str(exc),
+                }
+            )
+
+    return results

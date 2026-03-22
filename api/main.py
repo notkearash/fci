@@ -21,6 +21,7 @@ from ui.extraction import (
     fetch_and_cache_entry,
     get_cached_sources,
     get_saved_extractions,
+    run_extraction_for_all_cached_sources,
     run_extraction_from_cache,
     save_cache_entry,
 )
@@ -182,3 +183,11 @@ def extraction_from_cache(request: ExtractionCacheRequest) -> dict:
 @app.get("/extraction/results")
 def extraction_results(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
     return get_saved_extractions(initiative_id=initiative_id, limit=limit)
+
+
+@app.post("/extraction/cache/all")
+def extraction_from_cache_all(initiative_id: str | None = None, limit: int = 100) -> list[dict]:
+    return run_extraction_for_all_cached_sources(
+        initiative_id=initiative_id,
+        limit=limit,
+    )
