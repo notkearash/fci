@@ -12,25 +12,32 @@ class SourceStoreTests(unittest.TestCase):
     @patch("storage.source_store.list_human_predefined_sources")
     @patch(
         "storage.source_store.PREDEFINED_SOURCES",
-        {"housing-4": {"url": "https://static.example", "source_type": "xlsx", "description": "Static"}},
+        ["https://static.example/a", "https://static.example/b"],
     )
     def test_get_predefined_sources_combines_static_and_human(self, mock_human):
         mock_human.return_value = [
-            {
-                "initiative_id": "housing-4",
-                "url": "https://human.example",
-                "source_type": "csv",
-                "description": "Human source",
-                "notes": "verified",
-                "updated_at": None,
-            }
+            {"url": "https://human.example/c"},
         ]
 
-        results = get_predefined_sources("housing-4")
+        results = get_predefined_sources()
 
-        self.assertEqual(len(results), 2)
-        self.assertEqual(results[0]["origin"], "static")
-        self.assertEqual(results[1]["origin"], "human")
+        self.assertEqual(len(results), 3)
+        self.assertIn("https://static.example/a", results)
+        self.assertIn("https://human.example/c", results)
+
+    @patch("storage.source_store.list_human_predefined_sources")
+    @patch(
+        "storage.source_store.PREDEFINED_SOURCES",
+        ["https://static.example/a"],
+    )
+    def test_get_predefined_sources_deduplicates_human_urls(self, mock_human):
+        mock_human.return_value = [
+            {"url": "https://static.example/a"},
+        ]
+
+        results = get_predefined_sources()
+
+        self.assertEqual(len(results), 1)
 
     @patch("storage.source_store.mongo_configured")
     def test_save_discovered_sources_returns_zero_when_mongo_unconfigured(self, mock_configured):

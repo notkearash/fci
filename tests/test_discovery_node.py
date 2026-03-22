@@ -10,7 +10,6 @@ from unittest.mock import patch
 from agents.discovery import (
     create_discovery_agent,
     format_discovery_result,
-    lookup_predefined,
     run_discovery,
 )
 
@@ -48,23 +47,6 @@ def build_state(**overrides):
 
 
 class DiscoveryToolTests(unittest.TestCase):
-    @patch("agents.discovery.get_predefined_sources")
-    def test_lookup_predefined_returns_json_when_source_exists(self, mock_get_predefined_sources):
-        mock_get_predefined_sources.return_value = [{"url": "https://cmhc.example/x.xlsx"}]
-        result = lookup_predefined.invoke({"initiative_id": "housing-4"})
-
-        self.assertEqual(
-            json.loads(result),
-            {"url": "https://cmhc.example/x.xlsx"},
-        )
-
-    @patch("agents.discovery.get_predefined_sources")
-    def test_lookup_predefined_returns_message_when_missing(self, mock_get_predefined_sources):
-        mock_get_predefined_sources.return_value = []
-        result = lookup_predefined.invoke({"initiative_id": "housing-4"})
-
-        self.assertEqual(result, "No predefined source for housing-4")
-
     def test_format_discovery_result_returns_expected_json(self):
         result = format_discovery_result.invoke(
             {
@@ -197,7 +179,6 @@ class DiscoveryNodeTests(unittest.TestCase):
         self.assertIn("Previous attempt failed with:", sent_task)
         self.assertIn("No data extracted", sent_task)
         self.assertIn("Empty raw_value", sent_task)
-        self.assertIn("Initiative ID: housing-4", sent_task)
         mock_save_sources.assert_called_once()
 
     @patch("agents.discovery.create_react_agent")
@@ -217,7 +198,7 @@ class DiscoveryNodeTests(unittest.TestCase):
         mock_create_react_agent.assert_called_once()
         args, kwargs = mock_create_react_agent.call_args
         self.assertIs(args[0], llm)
-        self.assertEqual(len(args[1]), 5)
+        self.assertEqual(len(args[1]), 4)
         self.assertIn("prompt", kwargs)
 
 

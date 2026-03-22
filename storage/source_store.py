@@ -6,7 +6,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from data.sources import PREDEFINED_SOURCES
+from data.sources import PREDEFINED_SOURCES, SCORECARD_INITIATIVES, INITIATIVES_BY_ID
 
 
 DEFAULT_DB_NAME = "vision_1m"
@@ -40,23 +40,19 @@ def _get_collection(name: str):
     return client[db_name][name]
 
 
-def _normalize_predefined_record(record: dict[str, Any], origin: str) -> dict[str, Any]:
-    return {
-        "url": record.get("url", ""),
-        "source_type": record.get("source_type", "html"),
-        "description": record.get("description", ""),
-        "is_predefined": True,
-        "origin": origin,
-    }
+def get_all_predefined_urls() -> list[str]:
+    """Return the flat list of predefined source URLs."""
+    return list(PREDEFINED_SOURCES)
 
 
-def get_static_predefined_sources(initiative_id: str) -> list[dict[str, Any]]:
-    record = PREDEFINED_SOURCES.get(initiative_id)
-    if not record:
-        return []
-    if isinstance(record, list):
-        return [_normalize_predefined_record(item, origin="static") for item in record]
-    return [_normalize_predefined_record(record, origin="static")]
+def get_all_initiatives() -> list[dict[str, Any]]:
+    """Return all scorecard initiatives (the knowledge base)."""
+    return list(SCORECARD_INITIATIVES)
+
+
+def get_initiative(initiative_id: str) -> dict[str, Any] | None:
+    """Look up a single initiative by ID."""
+    return INITIATIVES_BY_ID.get(initiative_id)
 
 
 def list_human_predefined_sources(initiative_id: str | None = None) -> list[dict[str, Any]]:
@@ -91,21 +87,14 @@ def list_human_predefined_sources(initiative_id: str | None = None) -> list[dict
     ]
 
 
-def get_predefined_sources(initiative_id: str) -> list[dict[str, Any]]:
-    static_sources = get_static_predefined_sources(initiative_id)
-    human_sources = [
-        {
-            "url": item["url"],
-            "source_type": item["source_type"],
-            "description": item["description"],
-            "is_predefined": True,
-            "origin": "human",
-            "notes": item.get("notes", ""),
-            "updated_at": item.get("updated_at"),
-        }
-        for item in list_human_predefined_sources(initiative_id)
-    ]
-    return static_sources + human_sources
+def get_predefined_sources() -> list[str]:
+    """Return all predefined URLs (static from CSV + any human-added)."""
+    urls = list(PREDEFINED_SOURCES)
+    human = list_human_predefined_sources()
+    for item in human:
+        if item.get("url") and item["url"] not in urls:
+            urls.append(item["url"])
+    return urls
 
 
 def upsert_human_predefined_source(
